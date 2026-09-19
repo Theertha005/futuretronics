@@ -37,12 +37,20 @@ describe('games data-access helpers', () => {
         db = await createTestDatabase();
     });
 
-    it('returns all games ordered by title', async () => {
+    it('returns all games ordered by title and includes relation descriptions', async () => {
         await seedGames(db, 3);
         const all = await getAllGames(db);
         expect(all.map((g) => g.title)).toEqual(['Game 01', 'Game 02', 'Game 03']);
-        expect(all[0].category).toEqual({ id: expect.any(Number), name: 'Strategy' });
-        expect(all[0].publisher).toEqual({ id: expect.any(Number), name: 'Pub One' });
+        expect(all[0].category).toEqual({
+            id: expect.any(Number),
+            name: 'Strategy',
+            description: 'cat',
+        });
+        expect(all[0].publisher).toEqual({
+            id: expect.any(Number),
+            name: 'Pub One',
+            description: 'pub',
+        });
     });
 
     it('returns all game ids ordered by title', async () => {
@@ -52,11 +60,47 @@ describe('games data-access helpers', () => {
         expect(ids).toEqual(all.map((g) => g.id));
     });
 
-    it('fetches a single game by id', async () => {
+    it('fetches a single game by id with description fields', async () => {
         await seedGames(db, 2);
         const ids = await getAllGameIds(db);
         const game = await getGameById(db, ids[0]);
         expect(game?.title).toBe('Game 01');
+        expect(game?.category?.description).toBe('cat');
+        expect(game?.publisher?.description).toBe('pub');
+    });
+
+    it('handles missing category and publisher descriptions gracefully', async () => {
+        const [category] = await db
+            .insert(categories)
+            .values({ name: 'Co-op', description: null })
+            .returning({ id: categories.id });
+        const [publisher] = await db
+            .insert(publishers)
+            .values({ name: 'Solo Studio', description: null })
+            .returning({ id: publishers.id });
+
+        const [game] = await db
+            .insert(games)
+            .values({
+                title: 'Silent Signal',
+                description: 'Demo description',
+                starRating: 4.5,
+                categoryId: category.id,
+                publisherId: publisher.id,
+            })
+            .returning({ id: games.id });
+
+        const fetched = await getGameById(db, game.id);
+        expect(fetched?.category).toEqual({
+            id: category.id,
+            name: 'Co-op',
+            description: null,
+        });
+        expect(fetched?.publisher).toEqual({
+            id: publisher.id,
+            name: 'Solo Studio',
+            description: null,
+        });
     });
 
     it('returns null for a non-existent game', async () => {
